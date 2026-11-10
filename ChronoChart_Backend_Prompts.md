@@ -127,8 +127,74 @@ prices. Float64 output is not arbitrary-precision money/volume accounting.
   on confirmed `main`; local backup records commit ID and push outcome. The backup
   is excluded from commit/push. No live-provider/downloaded-data result is claimed.
 
+## Prompt 4 — Trading-session timeframes
+
+Prompt 0 foundation/workflow remains in force. Requirements brief stays unchanged.
+
+- [x] Configurable session counts, including 10, 15, and explicit prototype alias
+  `3 trading weeks = 15 sessions`; reject ambiguous calendar units.
+- [x] Use maintained `exchange-calendars` 4.13.2 for selected exchange XNYS.
+- [x] Stable session-ordinal anchor at 2000-01-03, independent of requested start.
+- [x] Diagnose missing closed requested sessions separately from holidays,
+  request-edge truncation, and unfinished full windows.
+- [x] Independent leading/trailing/unfinished retain/drop policies and explicit
+  missing raise/retain/drop. Missing rows cannot shift following windows.
+- [x] Compose group plans with unchanged Prompt 3 reduction in `pipeline.py`.
+- [x] Document UTC session-label schema, inclusive bounds, calendar/version
+  provenance, close instants, supported horizon, and completeness semantics.
+- [x] Test weekends/holidays/special closures, DST/early closes, truncated/overlapping
+  queries, invalid inputs, partial groups, policy drops, and non-mutation.
+- [x] Offline demo deliberately omits January 10; next group still starts January 18.
+- [x] Final editable/fresh non-editable installation, CLI help, pins, tests, and Git checks.
+- [x] Generate local-only delivery checkpoint and prepare milestone commit/push on
+  confirmed `main` (commit ID/push outcome recorded locally after delivery).
+
+### Decisions and learning notes
+
+- **What:** `TradingSessionTimeframe`, `build_trading_session_groups`, and composition
+  helper `aggregate_trading_sessions` add equity-session boundaries without changing
+  the OHLCV arithmetic. Every intersecting window remains visible in metadata.
+- **Why:** grouping observed rows shifts boundaries after a missing session;
+  enumerating the exchange's scheduled sessions from a fixed anchor does not.
+- **Underneath:** group ID = session ordinal // N. Request bounds select scheduled
+  windows; explicit source membership supplies observations. An explicit aware
+  `as_of` compared to exchange close instants determines elapsed expectations.
+- **Complexity:** one-time library schedule construction/cache O(S) storage;
+  membership/request/window work expected O(S+n+q+g+N) with at most q+2N lookaround.
+  Reduction remains separate: sorting O(n log n), then arithmetic O(n+g).
+- **Project connection:** supports 10/15-session candles and the 3-trading-week
+  prototype without pretending that these equal calendar-day/week timeframes.
+
+`coverage_complete` means no absent **closed requested** sessions; `count_complete`
+means N observations; session `is_complete` additionally requires `window_closed`.
+Calendar revisions can change ordinals, so metadata attrs record exchange/version/
+anchor and dependencies are pinned. Requests support 2000-01-03..2099-12-31 with
+full-window lookahead through 2101; oversized windows raise instead of truncating.
+
+### Verification checkpoint
+
+- 62 tests pass with `-W error` in editable `.venv`.
+- Offline fixture with missing 2000-01-10 returns counts 9/10 then 10/10 at labels
+  2000-01-03 and 2000-01-18. The second candle's boundary is unchanged.
+- Pinned maintained calendar 4.13.2 (PyPI release 2026-03-10); added pyluach,
+  toolz, and korean-lunar-calendar runtime pins.
+- Compatibility finding: pandas 3.1.1 emits an upstream calendar timezone-values
+  deprecation. Use verified pandas 3.0.6 and `<3.1` instead of suppressing warnings.
+- Editable `.venv` reinstalled; fresh `.venv-p4-check` installed from pinned tools/
+  runtime versions with a non-editable wheel. All 62 tests pass in both with
+  warnings treated as errors; CLI help and `pip check` pass in both.
+- All 30 dependency/tool pins match the fresh environment. Non-editable import
+  confirmed inside `.venv-p4-check/Lib/site-packages`. Tests cover module/console
+  entry points outside the checkout. No provider or downloaded-data tests claimed.
+- Requirements brief, thin `main.py`, and Prompt 3 reducer remain unchanged.
+  Backup and environments confirmed Git-ignored; diff whitespace checks pass.
+- Delivery commit: `Implement anchored XNYS trading-session timeframes` on `main`.
+  Local backup records the resulting commit ID and push outcome; it is excluded
+  from GitHub delivery.
+
 ## Remaining milestones (not implemented)
 
 Provider adapter and explicit OHLCV normalization: inspect daily AAPL timestamps
 and columns, specify adjustment/timezone/duplicate/missing/order policies, save an
-ignored local sample, and add deterministic tests before aggregation.
+ignored local sample, and validate provider data before applying existing grouping
+and reduction. Calendar-day/week and intraday timeframes remain separate future work.

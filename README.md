@@ -1,9 +1,11 @@
 # ChronoChart / Custom-Timeframe
 
 An independent financial charting project for custom OHLCV candle timeframes.
-**Prompt 3 adds a pure aggregation core and offline fixture demo** on the Prompt 0
-package foundation. Market-data downloading, normalization, timeframe rules, and
-UI are not implemented yet. No downloaded data is used in this milestone.
+**Prompt 4 adds anchored NYSE trading-session timeframes** on the Prompt 0 package
+foundation and Prompt 3 aggregation core. Configurable counts include 10 and 15
+sessions; the prototype alias **3 trading weeks = 15 sessions** is not a calendar
+duration. Market-data downloading, normalization, calendar-day/week timeframes,
+and UI are not implemented yet. All demos are offline fixtures.
 
 ## Exact local setup — Windows PowerShell
 
@@ -33,6 +35,8 @@ using the explicit interpreter; no execution-policy change is necessary.
 .\.venv\Scripts\python.exe -m unittest discover -s tests -v
 .\.venv\Scripts\python.exe main.py --demo-aggregation
 .\.venv\Scripts\python.exe main.py --demo-aggregation --incomplete drop
+.\.venv\Scripts\python.exe main.py --demo-trading-sessions
+.\.venv\Scripts\python.exe main.py --demo-trading-sessions --session-timeframe "3 trading weeks"
 ```
 
 `python main.py --help` also documents setup and execution. Install the package
@@ -45,13 +49,13 @@ This separate environment verifies installation rather than imports accidentally
 resolving from the checkout. It is safe to retain locally and is Git-ignored.
 
 ```powershell
-python -m venv .venv-check
-.\.venv-check\Scripts\python.exe -m pip install -r requirements-build.txt
-.\.venv-check\Scripts\python.exe -m pip install -r requirements.lock.txt
-.\.venv-check\Scripts\python.exe -m pip install . --no-deps --no-build-isolation
-.\.venv-check\Scripts\python.exe -m pip check
-.\.venv-check\Scripts\python.exe main.py --help
-.\.venv-check\Scripts\python.exe -m unittest discover -s tests -v
+python -m venv .venv-p4-check
+.\.venv-p4-check\Scripts\python.exe -m pip install -r requirements-build.txt
+.\.venv-p4-check\Scripts\python.exe -m pip install -r requirements.lock.txt
+.\.venv-p4-check\Scripts\python.exe -m pip install . --no-deps --no-build-isolation
+.\.venv-p4-check\Scripts\python.exe -m pip check
+.\.venv-p4-check\Scripts\python.exe main.py --help
+.\.venv-p4-check\Scripts\python.exe -W error -m unittest discover -s tests -v
 ```
 
 ## Dependency reproducibility
@@ -59,6 +63,8 @@ python -m venv .venv-check
 - `pyproject.toml`: supported direct dependency ranges, exact build requirements,
   `src` package discovery, and the `chronochart` console script.
 - `requirements-build.txt`: pinned pip, setuptools, and wheel.
+- Calendar: `exchange-calendars==4.13.2` for `XNYS`; pandas is capped `<3.1` and
+  pinned to 3.0.6 to avoid upstream calendar/pandas 3.1 deprecation warnings.
 - `requirements.lock.txt`: exact direct and transitive runtime versions, excluding
   the local project. This is a version snapshot, not a hash-verified lockfile;
   artifact availability and other platforms are not guaranteed.
@@ -79,16 +85,18 @@ src/chronochart/
   providers.py                  Future market-data adapters
   normalization.py              Future common OHLCV schema and validation
   aggregation.py                Pure grouped OHLCV reductions and metadata
-  timeframes.py                 Future boundary/session/calendar logic
-  demo.py                       Hand-calculated, network-free fixture
-tests/                          Offline CLI and aggregation contract tests
+  timeframes.py                 Anchored XNYS session plans and policies
+  pipeline.py                   Calendar grouping + independent reduction
+  demo.py                       Hand-calculated, network-free fixtures
+tests/                          Offline CLI, aggregation, and session tests
 docs/aggregation.md             API semantics, fixture math, and complexity
+docs/trading_sessions.md        Calendar anchor, policy semantics, API examples
 ChronoChart_Brief.md             Requirements document; preserved unchanged
 ChronoChart_Backend_Prompts.md   Main backend progress tracker
 BACKEND_SESSION_BACKUP.md       Local-only checkpoint handoff (Git-ignored)
 ```
 
-Provider, normalization, and timeframe modules remain documented scaffolds.
+Provider and normalization modules remain documented scaffolds.
 Aggregation operates on caller-supplied `CandleGroup` definitions; it never infers
 calendar/session boundaries. Missing/invalid OHLCV values are rejected, timestamps
 are explicit group labels, and incomplete groups may be retained (default) or
@@ -99,6 +107,18 @@ Read [the aggregation contract and hand-calculated example](docs/aggregation.md)
 Sorting costs O(n log n); validation and reduction cost O(n + g) separately, with
 O(n + g) space for n rows and g explicit groups. Completeness is based on the
 caller's expected row count, not proof of calendar coverage or a closed live candle.
+
+Read [the trading-session contract](docs/trading_sessions.md). XNYS groups use the
+fixed anchor **2000-01-03**, never the query start or observed-row position. Missing
+closed requested sessions raise by default, so data gaps cannot silently shift all
+subsequent boundaries. Explicit missing/edge/unfinished retain/drop policies keep
+metadata for omitted windows. Scheduled holidays are not missing sessions.
+
+The session composition result distinguishes `coverage_complete`, `count_complete`,
+and `window_closed`; `is_complete` requires full observed count **and** the final
+scheduled close to have elapsed. An explicit `as_of` instant makes behavior
+deterministic. Sources use UTC-midnight exchange-date labels, not raw intraday
+timestamps. Calendar days/weeks are deliberately not aliases for these timeframes.
 
 ## Milestone workflow
 

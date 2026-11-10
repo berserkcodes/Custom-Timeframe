@@ -52,7 +52,7 @@ class CliTests(unittest.TestCase):
         self.assertIn("unrecognized arguments", result.stderr)
 
     def test_processing_modules_are_importable(self) -> None:
-        for name in ("providers", "normalization", "aggregation", "timeframes", "cli"):
+        for name in ("providers", "normalization", "aggregation", "timeframes", "pipeline", "cli"):
             with self.subTest(module=name):
                 module = importlib.import_module(f"chronochart.{name}")
                 self.assertIsNotNone(module.__doc__)
@@ -93,6 +93,24 @@ class CliTests(unittest.TestCase):
         self.assertIn("600.0", result.stdout)
         self.assertNotIn("900.0", result.stdout)
         self.assertIn("False", result.stdout)
+
+    def test_trading_session_demo(self) -> None:
+        result = self.run_cli("--demo-trading-sessions")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("2000-01-18", result.stdout)
+        self.assertIn("missing_sessions", result.stdout)
+        self.assertIn("90.0", result.stdout)
+
+    def test_trading_session_alias_and_invalid_timeframe(self) -> None:
+        result = self.run_cli("--demo-trading-sessions", "--session-timeframe", "3 trading weeks")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        invalid = self.run_cli("--demo-trading-sessions", "--session-timeframe", "3 calendar weeks")
+        self.assertEqual(invalid.returncode, 2)
+        self.assertIn("trading sessions", invalid.stderr)
+
+    def test_fixture_modes_are_mutually_exclusive(self) -> None:
+        result = self.run_cli("--demo-trading-sessions", "--demo-aggregation")
+        self.assertEqual(result.returncode, 2)
 
 
 if __name__ == "__main__":

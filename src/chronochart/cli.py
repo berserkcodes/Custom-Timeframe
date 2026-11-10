@@ -1,7 +1,7 @@
 """Command-line parsing, help, and application dispatch only.
 
-Processing belongs in separate modules; aggregation is implemented while provider,
-normalization, and timeframe modules remain scaffolds.
+Processing belongs in separate modules; providers and normalization remain
+scaffolds, while aggregation and trading-session grouping are implemented.
 """
 
 import argparse
@@ -30,6 +30,8 @@ Local execution:
   python main.py --version
   python main.py --demo-aggregation
   python main.py --demo-aggregation --incomplete drop
+  python main.py --demo-trading-sessions
+  python main.py --demo-trading-sessions --session-timeframe "3 trading weeks"
   python -m unittest discover -s tests -v
 
 If activation is blocked, no execution-policy change is necessary:
@@ -39,7 +41,7 @@ If activation is blocked, no execution-policy change is necessary:
   .\\.venv\\Scripts\\python.exe main.py --help
 
 Status:
-  Aggregation core and offline fixture demo implemented; no downloads.
+  Aggregation and anchored XNYS session groups implemented; offline demos only.
   Requirements: ChronoChart_Brief.md (preserved unchanged).
   Progress tracker: ChronoChart_Backend_Prompts.md.
 """,
@@ -50,15 +52,36 @@ def main(argv: Sequence[str] | None = None) -> int:
     """Parse arguments and dispatch the offline demonstration or show usage."""
     parser = build_parser()
     parser.add_argument("--version", action="version", version=f"ChronoChart {__version__}")
-    parser.add_argument(
+    demos = parser.add_mutually_exclusive_group()
+    demos.add_argument(
         "--demo-aggregation", action="store_true",
         help="aggregate a hand-calculated fixture without downloading data",
+    )
+    demos.add_argument(
+        "--demo-trading-sessions", action="store_true",
+        help="demonstrate stable XNYS boundaries with a deliberately missing session",
+    )
+    parser.add_argument(
+        "--session-timeframe", default="10 trading sessions",
+        help="session-demo timeframe, e.g. '15 trading sessions' or '3 trading weeks'",
     )
     parser.add_argument(
         "--incomplete", choices=("retain", "drop"), default="retain",
         help="incomplete fixture-group policy (default: retain)",
     )
     args = parser.parse_args(argv)
+    if args.demo_trading_sessions:
+        from chronochart.demo import aggregate_session_fixture
+
+        try:
+            result = aggregate_session_fixture(args.session_timeframe)
+        except ValueError as exc:
+            parser.error(str(exc))
+        print("Offline XNYS fixture (missing 2000-01-10; holiday 2000-01-17):")
+        print(result.candles.to_string())
+        print("\nSession-window metadata:")
+        print(result.metadata.to_string())
+        return 0
     if args.demo_aggregation:
         from chronochart.demo import aggregate_fixture
 
