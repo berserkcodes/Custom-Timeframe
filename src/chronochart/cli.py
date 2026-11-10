@@ -1,7 +1,7 @@
 """Command-line parsing, help, and application dispatch only.
 
-Provider, normalization, aggregation, and timeframe implementations belong in
-separate modules as those milestones are implemented.
+Processing belongs in the separate providers, normalization, aggregation, and
+timeframes modules; those modules are scaffolds until their respective milestones.
 """
 
 import argparse
@@ -15,25 +15,31 @@ def build_parser() -> argparse.ArgumentParser:
     return argparse.ArgumentParser(
         description="ChronoChart: custom-timeframe OHLCV candles.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""Windows PowerShell setup (Python 3.11 or newer):
+        epilog="""Windows PowerShell setup (reproduced on Python 3.13.4, 64-bit):
   cd 'C:\\chrono chart'
   python -m venv .venv
   .\\.venv\\Scripts\\Activate.ps1
-  python -m pip install --upgrade pip
-  python -m pip install -e .
+  python -m pip install -r requirements-build.txt
+  python -m pip install -r requirements.lock.txt
+  python -m pip install -e . --no-deps --no-build-isolation
 
 Local execution:
   python main.py --help
+  python -m chronochart --help
+  chronochart --help
   python main.py --version
   python -m unittest discover -s tests -v
 
 If activation is blocked, no execution-policy change is necessary:
-  .\\.venv\\Scripts\\python.exe -m pip install -e .
+  .\\.venv\\Scripts\\python.exe -m pip install -r requirements-build.txt
+  .\\.venv\\Scripts\\python.exe -m pip install -r requirements.lock.txt
+  .\\.venv\\Scripts\\python.exe -m pip install -e . --no-deps --no-build-isolation
   .\\.venv\\Scripts\\python.exe main.py --help
 
 Status:
-  Project setup is implemented. Download and aggregation commands will be
-  added in later milestones; no market data is fetched by this command.
+  Prompt 0 scaffold only: no market data is fetched or aggregated.
+  Requirements: ChronoChart_Brief.md (preserved unchanged).
+  Progress tracker: ChronoChart_Backend_Prompts.md.
 """,
     )
 

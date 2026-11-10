@@ -1,6 +1,7 @@
 """Offline checks for the public entry point and its setup documentation."""
 
 from pathlib import Path
+import importlib
 import subprocess
 import sys
 import unittest
@@ -26,6 +27,9 @@ class CliTests(unittest.TestCase):
             "python -m venv .venv",
             "Activate.ps1",
             "python -m pip install -e .",
+            "requirements-build.txt",
+            "requirements.lock.txt",
+            "--no-deps --no-build-isolation",
             "python main.py --help",
             "Scripts\\python.exe",
         ):
@@ -46,6 +50,34 @@ class CliTests(unittest.TestCase):
         result = self.run_cli("--unknown")
         self.assertEqual(result.returncode, 2)
         self.assertIn("unrecognized arguments", result.stderr)
+
+    def test_processing_modules_are_importable(self) -> None:
+        for name in ("providers", "normalization", "aggregation", "timeframes", "cli"):
+            with self.subTest(module=name):
+                module = importlib.import_module(f"chronochart.{name}")
+                self.assertIsNotNone(module.__doc__)
+
+    def test_installed_module_help_outside_repository(self) -> None:
+        result = subprocess.run(
+            [sys.executable, "-m", "chronochart", "--help"],
+            cwd=ROOT.parent,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("ChronoChart", result.stdout)
+
+    def test_console_script_help_outside_repository(self) -> None:
+        script = Path(sys.executable).parent / (
+            "chronochart.exe" if sys.platform == "win32" else "chronochart"
+        )
+        result = subprocess.run(
+            [str(script), "--help"], cwd=ROOT.parent,
+            capture_output=True, text=True, check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("ChronoChart", result.stdout)
 
 
 if __name__ == "__main__":

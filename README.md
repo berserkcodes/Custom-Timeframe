@@ -1,45 +1,98 @@
 # ChronoChart / Custom-Timeframe
 
 An independent financial charting project for custom OHLCV candle timeframes.
-The first backend milestone provides project setup and a command-line shell;
-market-data downloading and candle processing are not implemented yet.
+**Prompt 0 provides packaging and module scaffolds only.** Market-data downloading,
+normalization, candle aggregation, timeframe rules, and UI are not implemented yet.
 
-## Local setup (Windows PowerShell)
+## Exact local setup — Windows PowerShell
 
-Requires Python 3.11 or newer. From the repository folder:
+Verified target: **Windows x64, CPython 3.13.4**. Package metadata permits Python
+3.11+, but the dependency snapshot is verified only on this target.
 
 ```powershell
+cd 'C:\chrono chart'
 python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip
-python -m pip install -e .
-python main.py --help
+.\.venv\Scripts\python.exe -m pip install -r requirements-build.txt
+.\.venv\Scripts\python.exe -m pip install -r requirements.lock.txt
+.\.venv\Scripts\python.exe -m pip install -e . --no-deps --no-build-isolation
+.\.venv\Scripts\python.exe -m pip check
 ```
 
-If PowerShell blocks activation, use `.\.venv\Scripts\python.exe` instead of
-`python` for installation and execution. Changing execution policy is not required.
-The `--help` output also contains setup and local-execution instructions and works
-before pandas or yfinance are installed.
+Activation is optional. If preferred, run `.\.venv\Scripts\Activate.ps1` and use
+`python` instead of `.\.venv\Scripts\python.exe`. If activation is blocked, keep
+using the explicit interpreter; no execution-policy change is necessary.
 
-## Verify locally
+## Local execution and verification
 
 ```powershell
-python main.py --version
-python -m unittest discover -s tests -v
+.\.venv\Scripts\python.exe main.py --help
+.\.venv\Scripts\python.exe main.py --version
+.\.venv\Scripts\python.exe -m chronochart --help
+.\.venv\Scripts\chronochart.exe --help
+.\.venv\Scripts\python.exe -m unittest discover -s tests -v
 ```
 
-## Structure
+`python main.py --help` also documents setup and execution. Install the package
+first: the `src` layout intentionally does not modify `sys.path` to bypass installation.
+Help does not import pandas/yfinance or access the network.
 
-- `main.py`: thin entry point.
-- `chronochart/cli.py`: argument parsing, help, and future command dispatch.
-- `chronochart/`: future provider, normalization, aggregation, and timeframe modules
-  will remain separate from the entry point and each other.
-- `tests/`: offline correctness checks.
-- `ChronoChart_Brief.md`: main project plan and milestone progress.
-- `BACKEND_SESSION_BACKUP.md`: local-only backend handoff and verification record
-  (generated at checkpoints; Git-ignored, never committed or pushed).
+### Fresh, non-editable installation check
 
-Dependencies are declared in `pyproject.toml` with compatible ranges, not an exact
-lockfile. yfinance is intended for prototype historical data; validate its data and
-usage terms before relying on it in production. Local data and virtual environments
-are excluded from Git.
+This separate environment verifies installation rather than imports accidentally
+resolving from the checkout. It is safe to retain locally and is Git-ignored.
+
+```powershell
+python -m venv .venv-check
+.\.venv-check\Scripts\python.exe -m pip install -r requirements-build.txt
+.\.venv-check\Scripts\python.exe -m pip install -r requirements.lock.txt
+.\.venv-check\Scripts\python.exe -m pip install . --no-deps --no-build-isolation
+.\.venv-check\Scripts\python.exe -m pip check
+.\.venv-check\Scripts\python.exe main.py --help
+.\.venv-check\Scripts\python.exe -m unittest discover -s tests -v
+```
+
+## Dependency reproducibility
+
+- `pyproject.toml`: supported direct dependency ranges, exact build requirements,
+  `src` package discovery, and the `chronochart` console script.
+- `requirements-build.txt`: pinned pip, setuptools, and wheel.
+- `requirements.lock.txt`: exact direct and transitive runtime versions, excluding
+  the local project. This is a version snapshot, not a hash-verified lockfile;
+  artifact availability and other platforms are not guaranteed.
+- Install the pins first, then install the project with `--no-deps
+  --no-build-isolation` to avoid re-resolving dependency/build versions.
+- To intentionally refresh, resolve dependencies in a separate clean environment,
+  capture `python -m pip freeze --exclude-editable`, separate build tools from
+  runtime pins, review the changes, and rerun the fresh-install checks above.
+
+## Structure and responsibilities
+
+```text
+main.py                         Thin entry point: delegates to CLI
+src/chronochart/
+  __init__.py                   Package version
+  __main__.py                   python -m chronochart entry point
+  cli.py                        Arguments, help, and future dispatch
+  providers.py                  Future market-data adapters
+  normalization.py              Future common OHLCV schema and validation
+  aggregation.py                Future grouped OHLCV reductions
+  timeframes.py                 Future boundary/session/calendar logic
+tests/test_cli.py               Offline entry-point and package checks
+ChronoChart_Brief.md             Requirements document; preserved unchanged
+ChronoChart_Backend_Prompts.md   Main backend progress tracker
+BACKEND_SESSION_BACKUP.md       Local-only checkpoint handoff (Git-ignored)
+```
+
+The four processing modules are documented boundaries, not working algorithms.
+Keeping them independent prevents CLI or provider code from silently defining
+candle semantics. Module separation adds no market-data processing overhead yet;
+argument parsing is linear in the argument input size.
+
+## Milestone workflow
+
+Use the confirmed `main` branch of
+<https://github.com/berserkcodes/Custom-Timeframe>. Verify locally, update
+`ChronoChart_Backend_Prompts.md`, generate/update the local backup after each
+checkpoint, then commit and push the implementation and tracker. **Never commit
+or push `BACKEND_SESSION_BACKUP.md`.** Keep virtual environments, credentials,
+and downloaded market data out of Git. Do not edit the brief for progress updates.
