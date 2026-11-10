@@ -1,8 +1,9 @@
 # ChronoChart / Custom-Timeframe
 
 An independent financial charting project for custom OHLCV candle timeframes.
-**Prompt 0 provides packaging and module scaffolds only.** Market-data downloading,
-normalization, candle aggregation, timeframe rules, and UI are not implemented yet.
+**Prompt 3 adds a pure aggregation core and offline fixture demo** on the Prompt 0
+package foundation. Market-data downloading, normalization, timeframe rules, and
+UI are not implemented yet. No downloaded data is used in this milestone.
 
 ## Exact local setup — Windows PowerShell
 
@@ -30,6 +31,8 @@ using the explicit interpreter; no execution-policy change is necessary.
 .\.venv\Scripts\python.exe -m chronochart --help
 .\.venv\Scripts\chronochart.exe --help
 .\.venv\Scripts\python.exe -m unittest discover -s tests -v
+.\.venv\Scripts\python.exe main.py --demo-aggregation
+.\.venv\Scripts\python.exe main.py --demo-aggregation --incomplete drop
 ```
 
 `python main.py --help` also documents setup and execution. Install the package
@@ -75,18 +78,27 @@ src/chronochart/
   cli.py                        Arguments, help, and future dispatch
   providers.py                  Future market-data adapters
   normalization.py              Future common OHLCV schema and validation
-  aggregation.py                Future grouped OHLCV reductions
+  aggregation.py                Pure grouped OHLCV reductions and metadata
   timeframes.py                 Future boundary/session/calendar logic
-tests/test_cli.py               Offline entry-point and package checks
+  demo.py                       Hand-calculated, network-free fixture
+tests/                          Offline CLI and aggregation contract tests
+docs/aggregation.md             API semantics, fixture math, and complexity
 ChronoChart_Brief.md             Requirements document; preserved unchanged
 ChronoChart_Backend_Prompts.md   Main backend progress tracker
 BACKEND_SESSION_BACKUP.md       Local-only checkpoint handoff (Git-ignored)
 ```
 
-The four processing modules are documented boundaries, not working algorithms.
-Keeping them independent prevents CLI or provider code from silently defining
-candle semantics. Module separation adds no market-data processing overhead yet;
-argument parsing is linear in the argument input size.
+Provider, normalization, and timeframe modules remain documented scaffolds.
+Aggregation operates on caller-supplied `CandleGroup` definitions; it never infers
+calendar/session boundaries. Missing/invalid OHLCV values are rejected, timestamps
+are explicit group labels, and incomplete groups may be retained (default) or
+dropped. Both policies expose count-based completeness metadata, including empty
+and dropped groups. Inputs are not mutated.
+
+Read [the aggregation contract and hand-calculated example](docs/aggregation.md).
+Sorting costs O(n log n); validation and reduction cost O(n + g) separately, with
+O(n + g) space for n rows and g explicit groups. Completeness is based on the
+caller's expected row count, not proof of calendar coverage or a closed live candle.
 
 ## Milestone workflow
 

@@ -71,7 +71,63 @@ it is excluded from GitHub delivery.
 - Prompt 0 supersedes that checkpoint's flat package layout and progress tracking
   in the brief, without rewriting the requirements document.
 
-## Next milestone (not implemented)
+## Prompt 3 — Aggregation core
+
+The user selected Prompt 3 directly; provider/normalization/timeframe milestones
+remain unimplemented. Prompt 0 packaging, installation, and checkpoint rules apply.
+
+- [x] Add pure, provider-independent `aggregate_candles` in its own module.
+- [x] Keep group definition separate: explicit members, output label, expected count.
+- [x] Implement first Open, max High, min Low, last Close, summed Volume.
+- [x] Define timestamps, empty input/groups, strict missing/invalid-value handling,
+  count-based completeness metadata, and retain/drop policies for any partial group.
+- [x] Test hand-calculated output, single rows, sorting, invalid/empty/partial input,
+  timezone preservation, deterministic calls, and input/output non-aliasing.
+- [x] Demonstrate fixture-only retain/drop aggregation before any downloaded data.
+- [x] Explain validation/reduction and sorting complexity separately in
+  `docs/aggregation.md`; README and CLI document exact local commands.
+- [x] Reverify editable/non-editable install, help, all tests, and dependency checks.
+- [x] Generate local-only checkpoint backup and prepare milestone GitHub delivery
+  (resulting commit ID/push outcome recorded locally after delivery).
+
+### Decisions and learning notes
+
+- **What:** `CandleGroup` specifies membership and expected count;
+  `AggregationResult` returns separate OHLCV and metadata DataFrames.
+- **Why:** external group definitions keep all calendar/session/provider policy
+  out of reduction. Metadata prevents retained partial candles from looking complete.
+- **Underneath:** validate a unique partition of source rows, copy/sort chronologically,
+  map rows to explicit owners, then reduce each group's values once. Volume uses
+  `math.fsum`; finite float64 values and valid OHLC ranges are required.
+- **Complexity:** sorting O(n log n) time / O(n) space; validation and reduction
+  expected O(n + g) time / O(n + g) space with timestamp hash maps. Total space
+  O(n + g); no repeated full-frame scan for each group.
+- **Project connection:** a future timeframe engine can supply the same groups to
+  the reducer for stock or crypto data without changing OHLCV arithmetic.
+
+Completeness is **observed count == caller's expected count**, not calendar or
+live-candle closure verification. Empty groups produce metadata but never synthetic
+prices. Float64 output is not arbitrary-precision money/volume accounting.
+
+### Checkpoint verification
+
+- Editable environment: 36 tests pass with warnings treated as errors.
+- Fixture retain output: `[10,16,9,15,600]` and `[15,19,14,18,900]`, with the
+  second group marked incomplete (2/3 observed).
+- Fixture drop output: only the first candle; metadata for the second group remains
+  with `is_complete=False, retained=False`.
+- Reinstalled editable `.venv` and non-editable `.venv-check`; all 36 tests pass in
+  both with warnings treated as errors. CLI help and `pip check` pass in both.
+- Non-editable import confirmed under `.venv-check/Lib/site-packages`; all 26
+  dependency/tool versions still match pins. Module/console help works outside
+  the checkout. No dependency snapshot changes were necessary.
+- `main.py`, `ChronoChart_Brief.md`, and dependency snapshots remain unchanged.
+  Backup and both environments remain Git-ignored; diff whitespace checks pass.
+- Delivery commit: `Implement provider-independent aggregation core and fixture demo`
+  on confirmed `main`; local backup records commit ID and push outcome. The backup
+  is excluded from commit/push. No live-provider/downloaded-data result is claimed.
+
+## Remaining milestones (not implemented)
 
 Provider adapter and explicit OHLCV normalization: inspect daily AAPL timestamps
 and columns, specify adjustment/timezone/duplicate/missing/order policies, save an

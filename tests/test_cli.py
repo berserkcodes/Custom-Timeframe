@@ -79,6 +79,21 @@ class CliTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("ChronoChart", result.stdout)
 
+    def test_fixture_aggregation_demo(self) -> None:
+        result = self.run_cli("--demo-aggregation")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Offline fixture candles:", result.stdout)
+        self.assertIn("600.0", result.stdout)
+        self.assertIn("900.0", result.stdout)
+        self.assertIn("is_complete", result.stdout)
+
+    def test_fixture_aggregation_demo_drop(self) -> None:
+        result = self.run_cli("--demo-aggregation", "--incomplete", "drop")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("600.0", result.stdout)
+        self.assertNotIn("900.0", result.stdout)
+        self.assertIn("False", result.stdout)
+
 
 if __name__ == "__main__":
     unittest.main()
