@@ -138,16 +138,17 @@ def _instant(value: pd.Timestamp, name: str) -> pd.Timestamp:
     return value.tz_convert("UTC")
 
 
-def _calendar_floor(instant: pd.Timestamp, timeframe: WindowTimeframe) -> pd.Timestamp:
+def _calendar_floor(instant: pd.Timestamp, timeframe: WindowTimeframe, anchor: pd.Timestamp) -> pd.Timestamp:
     local = instant.tz_convert(timeframe.timezone)
     date = local.tz_localize(None).normalize()
     if timeframe.mode == "3 calendar weeks":
-        anchor = pd.Timestamp("2000-01-03")  # Monday, local wall-calendar time
-        days = (date - anchor).days
-        floor = anchor + pd.Timedelta(days=(days // 21) * 21)
+        reference = anchor.tz_convert(timeframe.timezone).tz_localize(None)
+        days = (date - reference).days
+        floor = reference + pd.Timedelta(days=(days // 21) * 21)
     else:
-        month = ((date.year - 2000) * 12 + date.month - 1) // 2 * 2
-        floor = pd.Timestamp(year=2000 + month // 12, month=month % 12 + 1, day=1)
+        reference = anchor.tz_convert(timeframe.timezone).tz_localize(None)
+        month = ((date.year - reference.year) * 12 + date.month - reference.month) // 2 * 2
+        floor = reference + pd.DateOffset(months=month)
     return floor.tz_localize(timeframe.timezone).tz_convert("UTC")
 
 
@@ -166,7 +167,7 @@ def _equity_sessions(start: pd.Timestamp, end: pd.Timestamp) -> pd.DataFrame:
     return dates.loc[(dates["close"] > start) & (dates["open"] < end)]
 
 
-def _windows(start: pd.Timestamp, end: pd.Timestamp, timeframe: WindowTimeframe) -> list[_Window]:
+def _windows(start: pd.Timestamp, end: pd.Timestamp, timeframe: WindowTimeframe, anchor: pd.Timestamp | None) -> list[_Window]:
     windows: list[_Window] = []
 
     def add(window: _Window) -> None:
@@ -175,14 +176,14 @@ def _windows(start: pd.Timestamp, end: pd.Timestamp, timeframe: WindowTimeframe)
         windows.append(window)
 
     if timeframe.mode != "45-minute intraday":
-        left = _calendar_floor(start, timeframe)
+        left = _calendar_floor(start, timeframe, anchor)
         while left < end:
             right = _next_calendar(left, timeframe)
             add(_Window(left, right))
             left = right
     elif timeframe.market == "crypto":
         duration = pd.Timedelta(minutes=45)
-        left = UTC_ANCHOR + ((start - UTC_ANCHOR) // duration) * duration
+        left = anchor + ((start - anchor) // duration) * duration
         while left < end:
             add(_Window(left, left + duration))
             left += duration
@@ -259,6 +260,7 @@ def build_window_groups(
     unfinished: EdgePolicy = "retain",
     missing: MissingPolicy = "raise",
     short_session: EdgePolicy = "retain",
+    anchor: pd.Timestamp | None = None,
 ) -> WindowGroupPlan:
     """Build fixed-boundary windows and their explicit expected source-grid slots.
 
@@ -266,6 +268,10 @@ def build_window_groups(
     source slots must fit one target, even when absent from the input. Finer data
     must be supplied by the caller to resolve straddling; no daily-to-intraday
     reconstruction or proportional splitting of OHLCV is ever performed.
+    An optional fixed target ``anchor`` changes phase, never source-grid alignment:
+    weeks require local Monday midnight, months local month-first midnight, and
+    crypto intraday a whole UTC minute. Equity intraday remains session-open only.
+    Changing target phase can require finer source bars; straddling is still rejected.
     """
     if not isinstance(timeframe, WindowTimeframe) or not isinstance(source, SourceResolution):
         raise ValueError("Provide WindowTimeframe and SourceResolution objects")
@@ -275,6 +281,26 @@ def build_window_groups(
     if missing not in ("raise", "retain", "drop"):
         raise ValueError("missing must be 'raise', 'retain', or 'drop'")
     start, end, as_of = _instant(start, "start"), _instant(end, "end"), _instant(as_of, "as_of")
+    if timeframe.mode == "45-minute intraday" and timeframe.market == "equity":
+        if anchor is not None:
+            raise ValueError("Equity intraday anchor is session-open, not a fixed timestamp")
+    else:
+        if anchor is None:
+            date = "2000-01-03" if timeframe.mode == "3 calendar weeks" else "2000-01-01"
+            anchor = pd.Timestamp(date, tz=timeframe.timezone)
+        anchor = _instant(anchor, "anchor")
+        if not pd.Timestamp("1970-01-01", tz="UTC") <= anchor <= pd.Timestamp("2100-01-01", tz="UTC"):
+            raise ValueError("Target anchor must be within1970..2100 UTC")
+        local_anchor = anchor.tz_convert(timeframe.timezone)
+        if timeframe.mode != "45-minute intraday":
+            if local_anchor != local_anchor.normalize():
+                raise ValueError("Calendar anchor must be local midnight")
+            if timeframe.mode == "3 calendar weeks" and local_anchor.dayofweek != 0:
+                raise ValueError("Calendar-week anchor must be Monday")
+            if timeframe.mode == "2 calendar months" and local_anchor.day != 1:
+                raise ValueError("Calendar-month anchor must be the first of a month")
+        elif anchor.value % pd.Timedelta(minutes=1).value:
+            raise ValueError("Crypto intraday anchor must be a whole UTC minute")
     if not pd.Timestamp("2000-01-03", tz="UTC") <= start < end <= pd.Timestamp("2100-01-01", tz="UTC"):
         raise ValueError("Request must satisfy 2000-01-03 <= start < end <= 2100-01-01 UTC")
     if not isinstance(source_index, pd.DatetimeIndex) or str(source_index.tz) != "UTC":
@@ -295,11 +321,18 @@ def build_window_groups(
         "week_anchor": f"2000-01-03 00:00 {timeframe.timezone} (Monday)",
         "month_anchor": f"2000-01-01 00:00 {timeframe.timezone} (Jan/Mar/May/Jul/Sep/Nov)",
         "crypto_intraday_anchor": UTC_ANCHOR, "closure": "left", "label": "left-UTC",
+        "target_anchor": anchor if anchor is not None else "session-open",
         "source_kind": source.kind, "source_interval": source.interval,
         "request_start": start, "request_end": end, "as_of": as_of,
         "policies": dict(leading=leading, trailing=trailing, unfinished=unfinished, missing=missing, short_session=short_session),
     }
-    windows = _windows(start, end, timeframe)
+    if timeframe.mode == "3 calendar weeks":
+        context["week_anchor"] = anchor
+    elif timeframe.mode == "2 calendar months":
+        context["month_anchor"] = anchor
+    elif timeframe.market == "crypto":
+        context["crypto_intraday_anchor"] = anchor
+    windows = _windows(start, end, timeframe, anchor)
     if not windows:
         if len(source_index):
             raise ValueError("No exchange windows exist for the supplied source bars")

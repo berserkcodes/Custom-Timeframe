@@ -130,6 +130,7 @@ def build_trading_session_groups(
     trailing: EdgePolicy = "retain",
     unfinished: EdgePolicy = "retain",
     missing: MissingPolicy = "raise",
+    anchor: pd.Timestamp = ANCHOR,
 ) -> SessionGroupPlan:
     """Plan fixed-anchor XNYS windows for an inclusive request date range.
 
@@ -137,6 +138,9 @@ def build_trading_session_groups(
     not raw intraday/provider timestamps. ``as_of`` is an explicit aware instant;
     schedule closes (including early closes/DST) decide elapsed expectations.
     Missing closed requested sessions raise by default; holidays never do.
+    ``anchor`` defaults to2000-01-03 but may be another scheduled UTC session-date
+    label. Negative group IDs support queries before that anchor when full windows
+    still fit the fixed calendar horizon. Reuse the same anchor across queries.
     See docs/trading_sessions.md for all policy and metadata definitions.
     """
     if not isinstance(timeframe, TradingSessionTimeframe):
@@ -162,6 +166,13 @@ def build_trading_session_groups(
         raise ValueError("Source sessions must lie inside the inclusive request range")
 
     schedule = _xnys_schedule()
+    if (
+        not isinstance(anchor, pd.Timestamp) or pd.isna(anchor)
+        or str(anchor.tz) != "UTC" or anchor != anchor.normalize()
+        or anchor not in schedule.index
+    ):
+        raise ValueError("Session anchor must be a scheduled XNYS date at UTC midnight")
+    anchor_position = int(schedule.index.get_loc(anchor))
     if not source_index.isin(schedule.index).all():
         raise ValueError("Source includes a non-XNYS session (weekend, holiday, or closure)")
     if (schedule.loc[source_index, "open"] > as_of).any():
@@ -169,7 +180,9 @@ def build_trading_session_groups(
     first = int(schedule.index.searchsorted(start_date, side="left"))
     stop = int(schedule.index.searchsorted(end_date, side="right"))
     if first == stop:
-        return SessionGroupPlan((), _metadata([], []))
+        info = _metadata([], [])
+        info.attrs["anchor"] = anchor
+        return SessionGroupPlan((), info)
 
     observed = set(source_index)
     groups: list[CandleGroup] = []
@@ -177,9 +190,10 @@ def build_trading_session_groups(
     labels: list[pd.Timestamp] = []
     all_missing: list[pd.Timestamp] = []
     size = timeframe.sessions
-    for group_id in range(first // size, (stop - 1) // size + 1):
-        left, right = group_id * size, (group_id + 1) * size
-        if right > len(schedule):
+    for group_id in range((first - anchor_position) // size, (stop - 1 - anchor_position) // size + 1):
+        left = anchor_position + group_id * size
+        right = left + size
+        if left < 0 or right > len(schedule):
             raise ValueError("Full timeframe window exceeds the calendar horizon (2101-12-31)")
         window = schedule.iloc[left:right]
         requested = schedule.iloc[max(left, first):min(right, stop)]
@@ -213,4 +227,6 @@ def build_trading_session_groups(
         })
     if all_missing and missing == "raise":
         raise MissingSessionsError(tuple(all_missing))
-    return SessionGroupPlan(tuple(groups), _metadata(records, labels))
+    info = _metadata(records, labels)
+    info.attrs["anchor"] = anchor
+    return SessionGroupPlan(tuple(groups), info)

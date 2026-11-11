@@ -36,6 +36,12 @@ Local execution:
   python main.py --demo-time-windows --window-mode "2 calendar months" --market crypto
   python main.py --demo-time-windows --window-mode "45-minute intraday" --market equity
   python main.py --demo-providers
+  python main.py run --help
+  python main.py run --provider fixture-equity --symbol AAPL --start 2024-01-01 --end 2024-05-01 --as-of 2024-06-01T00:00:00Z --source-interval 1d --target-mode trading-sessions --target-amount 10 --target-unit sessions --output data/exports/aapl10.json
+  python main.py run --provider fixture-equity --symbol AAPL --start 2024-01-01 --end 2024-05-01 --as-of 2024-06-01T00:00:00Z --source-interval 1d --target-mode trading-sessions --target-amount 15 --target-unit sessions --output data/exports/aapl15.json
+  python main.py run --provider fixture-equity --symbol AAPL --start 2024-01-01 --end 2024-05-01 --as-of 2024-06-01T00:00:00Z --source-interval 1d --target-mode calendar --target-amount 3 --target-unit weeks --output data/exports/aapl3weeks.json
+  python main.py run --provider fixture-equity --symbol AAPL --start 2024-01-01 --end 2024-05-01 --as-of 2024-06-01T00:00:00Z --source-interval 1d --target-mode calendar --target-amount 2 --target-unit months --output data/exports/aapl2months.json
+  python main.py run --provider fixture-crypto --symbol BTCUSDT --start 2024-02-29 --end 2024-03-01 --as-of 2024-03-02T00:00:00Z --source-interval 15m --target-mode intraday --target-amount 45 --target-unit minutes --output data/exports/crypto45.json
   python main.py --live-binance-check --symbol BTCUSDT --interval 15m --start 2025-07-03T13:30:00Z --end 2025-07-03T17:00:00Z --as-of 2025-07-07T00:00:00Z
   python -m unittest discover -s tests -v
 
@@ -51,7 +57,9 @@ Status:
   Output labels: UTC left edges. Daily-to-intraday and straddling bars rejected.
   Short final session window: retain by default, explicitly marked in metadata.
   --demo-providers uses equity fixtures + mocked Binance with the same engine.
-  Only --live-binance-check accesses market data; no credentials are required.
+  run connects fetch/normalize/aggregate/export; fixture-* examples are synthetic.
+  run --provider yfinance/binance and --live-binance-check are explicit live IO.
+  Optional cache stores raw sources only; failed refresh never uses stale data.
   Binance availability is regional. HTTP403/451 stop; no restriction bypass.
   Open-time selection [start,end); forming bars excluded by default, never split.
   Requirements: ChronoChart_Brief.md (preserved unchanged).
@@ -102,7 +110,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--incomplete", choices=("retain", "drop"), default="retain",
         help="incomplete fixture-group policy (default: retain)",
     )
+    from chronochart.run_cli import add_run_command, run_from_args
+
+    add_run_command(parser)
     args = parser.parse_args(argv)
+    if args.command == "run":
+        return run_from_args(parser, args)
     if args.demo_providers:
         from chronochart.demo import aggregate_provider_fixtures
 

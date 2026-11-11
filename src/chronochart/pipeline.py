@@ -4,7 +4,7 @@ import pandas as pd
 
 from chronochart.aggregation import AggregationResult, aggregate_candles
 from chronochart.timeframes import (
-    EdgePolicy, MissingPolicy, TradingSessionTimeframe, build_trading_session_groups,
+    ANCHOR, EdgePolicy, MissingPolicy, TradingSessionTimeframe, build_trading_session_groups,
 )
 from chronochart.window_timeframes import SourceResolution, WindowTimeframe, build_window_groups
 
@@ -20,6 +20,7 @@ def aggregate_trading_sessions(
     trailing: EdgePolicy = "retain",
     unfinished: EdgePolicy = "retain",
     missing: MissingPolicy = "raise",
+    anchor: pd.Timestamp = ANCHOR,
 ) -> AggregationResult:
     """Validate/reduce all source rows, then apply explicit window policies.
 
@@ -32,6 +33,7 @@ def aggregate_trading_sessions(
     plan = build_trading_session_groups(
         candles.index, timeframe, start=start, end=end, as_of=as_of,
         leading=leading, trailing=trailing, unfinished=unfinished, missing=missing,
+        anchor=anchor,
     )
     reduced = aggregate_candles(candles, plan.groups, incomplete="retain")
     labels = plan.metadata.index[plan.metadata["retained"]]
@@ -52,6 +54,7 @@ def aggregate_time_windows(
     unfinished: EdgePolicy = "retain",
     missing: MissingPolicy = "raise",
     short_session: EdgePolicy = "retain",
+    anchor: pd.Timestamp | None = None,
 ) -> AggregationResult:
     """Reduce calendar/intraday plans, then apply explicit retention policies.
 
@@ -64,6 +67,7 @@ def aggregate_time_windows(
         candles.index, timeframe, source, start=start, end=end, as_of=as_of,
         leading=leading, trailing=trailing, unfinished=unfinished, missing=missing,
         short_session=short_session,
+        anchor=anchor,
     )
     reduced = aggregate_candles(candles, plan.groups, incomplete="retain")
     labels = plan.metadata.index[plan.metadata["retained"]]

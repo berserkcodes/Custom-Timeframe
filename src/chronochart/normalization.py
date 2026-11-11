@@ -6,10 +6,13 @@ and conflicting duplicate timestamps raise. Identical duplicate rows collapse.
 No imputation, reconstruction, naive-timezone guessing, or input mutation.
 """
 
+from copy import deepcopy
+
 import numpy as np
 import pandas as pd
 
 from chronochart.aggregation import OHLCV
+from chronochart.providers import HistoricalRequest, MarketDataResult, ProviderResponseError
 
 
 def normalize_ohlcv(frame: pd.DataFrame) -> pd.DataFrame:
@@ -50,3 +53,40 @@ def normalize_ohlcv(frame: pd.DataFrame) -> pd.DataFrame:
     result = result.loc[~result.index.duplicated(keep="first")].sort_index(kind="stable").copy(deep=True)
     result.attrs.update(schema="OHLCV-v1", duplicates_removed=duplicate_count)
     return result
+
+
+def validate_market_data(data: MarketDataResult, request: HistoricalRequest) -> MarketDataResult:
+    """Normalize/validate a provider or cache result against its exact request.
+
+    Validation does not erase provider provenance (e.g. duplicates already removed
+    by pagination). Typed maturity flags must agree with actual source ends and
+    the request; truthy strings are never interpreted as booleans.
+    """
+    if not isinstance(data, MarketDataResult) or not isinstance(data.metadata, pd.DataFrame):
+        raise ProviderResponseError("Provider/cache must return MarketDataResult frames")
+    candles = normalize_ohlcv(data.candles)
+    candles.attrs.update(deepcopy(data.candles.attrs))
+    info = data.metadata.copy(deep=True)
+    if not isinstance(info.index, pd.DatetimeIndex) or str(info.index.tz) != "UTC" or not info.index.is_unique or not info.columns.is_unique:
+        raise ProviderResponseError("Source metadata needs unique UTC timestamps")
+    info.index = info.index.as_unit("ns").rename("Timestamp")
+    info = info.sort_index(kind="stable")
+    if not candles.index.equals(info.index) or not {"bar_end", "is_closed", "crosses_request_end"}.issubset(info.columns):
+        raise ProviderResponseError("Source candles and maturity metadata must align")
+    if not isinstance(info["bar_end"].dtype, pd.DatetimeTZDtype) or str(info["bar_end"].dt.tz) != "UTC":
+        raise ProviderResponseError("Source bar ends must use UTC")
+    info["bar_end"] = info["bar_end"].astype("datetime64[ns, UTC]")
+    if info["bar_end"].isna().any() or (info["bar_end"] <= candles.index).any():
+        raise ProviderResponseError("Invalid source interval ends")
+    for name in ("is_closed", "crosses_request_end"):
+        if str(info[name].dtype) != "bool":
+            raise ProviderResponseError("Source flags must be boolean, not truthy strings")
+    if not (info["is_closed"] == (info["bar_end"] <= request.as_of)).all():
+        raise ProviderResponseError("Source maturity flags contradict as_of")
+    if not (info["crosses_request_end"] == (info["bar_end"] > request.end)).all():
+        raise ProviderResponseError("Source end-crossing flags contradict request")
+    if ((candles.index < request.start) | (candles.index >= request.end)).any():
+        raise ProviderResponseError("Source labels outside requested range")
+    if request.forming != "include" and not info["is_closed"].all():
+        raise ProviderResponseError("Provider/cache violated forming-candle policy")
+    return MarketDataResult(candles, info)
