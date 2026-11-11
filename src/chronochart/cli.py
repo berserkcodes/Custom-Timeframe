@@ -1,7 +1,7 @@
 """Command-line parsing, help, and application dispatch only.
 
 Processing belongs in separate modules; providers and normalization remain
-scaffolds, while aggregation and trading-session grouping are implemented.
+scaffolds. Aggregation, session, calendar, and intraday grouping are implemented.
 """
 
 import argparse
@@ -32,6 +32,9 @@ Local execution:
   python main.py --demo-aggregation --incomplete drop
   python main.py --demo-trading-sessions
   python main.py --demo-trading-sessions --session-timeframe "3 trading weeks"
+  python main.py --demo-time-windows --window-mode "3 calendar weeks" --market equity
+  python main.py --demo-time-windows --window-mode "2 calendar months" --market crypto
+  python main.py --demo-time-windows --window-mode "45-minute intraday" --market equity
   python -m unittest discover -s tests -v
 
 If activation is blocked, no execution-policy change is necessary:
@@ -41,7 +44,11 @@ If activation is blocked, no execution-policy change is necessary:
   .\\.venv\\Scripts\\python.exe main.py --help
 
 Status:
-  Aggregation and anchored XNYS session groups implemented; offline demos only.
+  Aggregation, anchored session/calendar modes, and 45-minute windows implemented.
+  Equity: America/New_York + XNYS; crypto: UTC 24/7. Intervals [start,end).
+  Output labels: UTC left edges. Daily-to-intraday and straddling bars rejected.
+  Short final session window: retain by default, explicitly marked in metadata.
+  Offline fixtures only; no market data is downloaded.
   Requirements: ChronoChart_Brief.md (preserved unchanged).
   Progress tracker: ChronoChart_Backend_Prompts.md.
 """,
@@ -61,6 +68,19 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--demo-trading-sessions", action="store_true",
         help="demonstrate stable XNYS boundaries with a deliberately missing session",
     )
+    demos.add_argument(
+        "--demo-time-windows", action="store_true",
+        help="demonstrate explicit calendar or 45-minute windows without downloads",
+    )
+    parser.add_argument(
+        "--window-mode", default="45-minute intraday",
+        choices=("3 calendar weeks", "2 calendar months", "45-minute intraday"),
+        help="explicit calendar/intraday fixture mode (not a trading-week alias)",
+    )
+    parser.add_argument(
+        "--market", choices=("equity", "crypto"), default="equity",
+        help="time-window fixture market: equity XNYS or crypto UTC 24/7",
+    )
     parser.add_argument(
         "--session-timeframe", default="10 trading sessions",
         help="session-demo timeframe, e.g. '15 trading sessions' or '3 trading weeks'",
@@ -70,6 +90,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="incomplete fixture-group policy (default: retain)",
     )
     args = parser.parse_args(argv)
+    if args.demo_time_windows:
+        from chronochart.demo import aggregate_window_fixture
+
+        result = aggregate_window_fixture(args.window_mode, args.market)
+        print(f"Offline {args.window_mode} fixture ({args.market}):")
+        print(result.candles.to_string())
+        print("\nWindow coverage metadata:")
+        print(result.metadata.to_string())
+        return 0
     if args.demo_trading_sessions:
         from chronochart.demo import aggregate_session_fixture
 

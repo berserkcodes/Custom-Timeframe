@@ -46,3 +46,35 @@ def aggregate_session_fixture(timeframe: str = "10 trading sessions") -> Aggrega
         start="2000-01-03", end="2000-01-31", as_of=pd.Timestamp("2000-03-01", tz="UTC"),
         missing="retain",
     )
+
+
+def aggregate_window_fixture(
+    mode: str = "45-minute intraday", market: str = "equity",
+) -> AggregationResult:
+    """Offline examples for every explicit calendar/intraday mode and market."""
+    from chronochart.pipeline import aggregate_time_windows
+    from chronochart.timeframes import _xnys_schedule
+    from chronochart.window_timeframes import SourceResolution, WindowTimeframe
+
+    timeframe = WindowTimeframe(mode, market)
+    if mode == "45-minute intraday":
+        start = pd.Timestamp("2025-07-03T13:30:00Z") if market == "equity" else pd.Timestamp("2024-02-29T00:00:00Z")
+        end = pd.Timestamp("2025-07-03T17:00:00Z") if market == "equity" else pd.Timestamp("2024-02-29T01:30:00Z")
+        dates = pd.date_range(start, end, freq="15min", inclusive="left")
+        source = SourceResolution.intraday("15min")
+    else:
+        start = pd.Timestamp("2024-01-01", tz=timeframe.timezone)
+        end = pd.Timestamp("2024-03-01", tz=timeframe.timezone)
+        dates = (
+            _xnys_schedule().loc["2024-01-01":"2024-02-29"].index
+            if market == "equity" else pd.date_range(start, end, freq="D", inclusive="left")
+        )
+        source = SourceResolution.daily()
+    candles = pd.DataFrame(
+        [[i, i + 1, i - 1, i + 0.5, 100] for i in range(1, len(dates) + 1)],
+        index=dates, columns=OHLCV,
+    )
+    return aggregate_time_windows(
+        candles, timeframe, source, start=start, end=end,
+        as_of=pd.Timestamp("2026-01-01", tz="UTC"),
+    )

@@ -52,7 +52,7 @@ class CliTests(unittest.TestCase):
         self.assertIn("unrecognized arguments", result.stderr)
 
     def test_processing_modules_are_importable(self) -> None:
-        for name in ("providers", "normalization", "aggregation", "timeframes", "pipeline", "cli"):
+        for name in ("providers", "normalization", "aggregation", "timeframes", "window_timeframes", "pipeline", "cli"):
             with self.subTest(module=name):
                 module = importlib.import_module(f"chronochart.{name}")
                 self.assertIsNotNone(module.__doc__)
@@ -110,6 +110,19 @@ class CliTests(unittest.TestCase):
 
     def test_fixture_modes_are_mutually_exclusive(self) -> None:
         result = self.run_cli("--demo-trading-sessions", "--demo-aggregation")
+        self.assertEqual(result.returncode, 2)
+
+    def test_all_named_time_window_demo_modes(self) -> None:
+        for mode in ("3 calendar weeks", "2 calendar months", "45-minute intraday"):
+            for market in ("equity", "crypto"):
+                with self.subTest(mode=mode, market=market):
+                    result = self.run_cli("--demo-time-windows", "--window-mode", mode, "--market", market)
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertIn(mode, result.stdout)
+                    self.assertIn("expected_count", result.stdout)
+
+    def test_ambiguous_calendar_demo_mode_is_rejected(self) -> None:
+        result = self.run_cli("--demo-time-windows", "--window-mode", "3 weeks")
         self.assertEqual(result.returncode, 2)
 
 
