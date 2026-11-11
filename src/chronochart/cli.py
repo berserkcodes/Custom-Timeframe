@@ -1,7 +1,7 @@
 """Command-line parsing, help, and application dispatch only.
 
-Processing belongs in separate modules; providers and normalization remain
-scaffolds. Aggregation, session, calendar, and intraday grouping are implemented.
+Transport, normalization, and aggregation stay in separate modules. Binance is
+public-data only; live requests are opt-in and require explicit UTC-aware bounds.
 """
 
 import argparse
@@ -35,6 +35,8 @@ Local execution:
   python main.py --demo-time-windows --window-mode "3 calendar weeks" --market equity
   python main.py --demo-time-windows --window-mode "2 calendar months" --market crypto
   python main.py --demo-time-windows --window-mode "45-minute intraday" --market equity
+  python main.py --demo-providers
+  python main.py --live-binance-check --symbol BTCUSDT --interval 15m --start 2025-07-03T13:30:00Z --end 2025-07-03T17:00:00Z --as-of 2025-07-07T00:00:00Z
   python -m unittest discover -s tests -v
 
 If activation is blocked, no execution-policy change is necessary:
@@ -48,7 +50,10 @@ Status:
   Equity: America/New_York + XNYS; crypto: UTC 24/7. Intervals [start,end).
   Output labels: UTC left edges. Daily-to-intraday and straddling bars rejected.
   Short final session window: retain by default, explicitly marked in metadata.
-  Offline fixtures only; no market data is downloaded.
+  --demo-providers uses equity fixtures + mocked Binance with the same engine.
+  Only --live-binance-check accesses market data; no credentials are required.
+  Binance availability is regional. HTTP403/451 stop; no restriction bypass.
+  Open-time selection [start,end); forming bars excluded by default, never split.
   Requirements: ChronoChart_Brief.md (preserved unchanged).
   Progress tracker: ChronoChart_Backend_Prompts.md.
 """,
@@ -72,6 +77,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--demo-time-windows", action="store_true",
         help="demonstrate explicit calendar or 45-minute windows without downloads",
     )
+    demos.add_argument("--demo-providers", action="store_true", help="equity + mocked Binance through one aggregation engine (offline)")
+    demos.add_argument("--live-binance-check", action="store_true", help="OPTIONAL public Binance network request; regional availability applies")
+    parser.add_argument("--symbol", default="BTCUSDT", help="live Binance uppercase symbol (default: BTCUSDT)")
+    parser.add_argument("--interval", default="15m", help="live Binance source interval (default: 15m, not45m)")
+    parser.add_argument("--start", help="live check inclusive OPEN-time bound, aware ISO timestamp")
+    parser.add_argument("--end", help="live check exclusive OPEN-time bound, aware ISO timestamp")
+    parser.add_argument("--as-of", help="explicit aware candle-maturity instant (not point-in-time replay)")
+    parser.add_argument("--forming", choices=("exclude", "include", "raise"), default="exclude", help="live forming-candle policy")
     parser.add_argument(
         "--window-mode", default="45-minute intraday",
         choices=("3 calendar weeks", "2 calendar months", "45-minute intraday"),
@@ -90,6 +103,35 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="incomplete fixture-group policy (default: retain)",
     )
     args = parser.parse_args(argv)
+    if args.demo_providers:
+        from chronochart.demo import aggregate_provider_fixtures
+
+        for name, result in aggregate_provider_fixtures().items():
+            print(f"\n{name} (offline, same aggregation engine):")
+            print(result.candles.to_string())
+            print(result.metadata[["expected_count", "is_complete", "short_window"]].to_string())
+        return 0
+    if args.live_binance_check:
+        if not all((args.start, args.end, args.as_of)):
+            parser.error("--live-binance-check requires --start, --end, and --as-of")
+        import pandas as pd
+        from chronochart.binance import BinanceProvider
+        from chronochart.providers import HistoricalRequest, ProviderError
+
+        try:
+            request = HistoricalRequest(
+                args.symbol, args.interval, pd.Timestamp(args.start), pd.Timestamp(args.end),
+                pd.Timestamp(args.as_of), forming=args.forming,
+            )
+            with BinanceProvider() as provider:
+                result = provider.fetch_history(request)
+        except (ValueError, ProviderError) as exc:
+            parser.error(str(exc))
+        print(f"Fetched {len(result.candles)} bars (preview: first20):")
+        print(result.candles.head(20).to_string())
+        print("\nBar maturity metadata:")
+        print(result.metadata.head(20).to_string())
+        return 0
     if args.demo_time_windows:
         from chronochart.demo import aggregate_window_fixture
 

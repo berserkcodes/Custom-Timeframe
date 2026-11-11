@@ -52,7 +52,7 @@ class CliTests(unittest.TestCase):
         self.assertIn("unrecognized arguments", result.stderr)
 
     def test_processing_modules_are_importable(self) -> None:
-        for name in ("providers", "normalization", "aggregation", "timeframes", "window_timeframes", "pipeline", "cli"):
+        for name in ("providers", "normalization", "binance", "aggregation", "timeframes", "window_timeframes", "pipeline", "cli"):
             with self.subTest(module=name):
                 module = importlib.import_module(f"chronochart.{name}")
                 self.assertIsNotNone(module.__doc__)
@@ -124,6 +124,18 @@ class CliTests(unittest.TestCase):
     def test_ambiguous_calendar_demo_mode_is_rejected(self) -> None:
         result = self.run_cli("--demo-time-windows", "--window-mode", "3 weeks")
         self.assertEqual(result.returncode, 2)
+
+    def test_provider_demo_is_offline_and_shares_the_engine(self) -> None:
+        result = self.run_cli("--demo-providers")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("equity_fixture", result.stdout)
+        self.assertIn("crypto_binance_mock", result.stdout)
+        self.assertIn("same aggregation engine", result.stdout)
+
+    def test_live_check_requires_explicit_bounds_without_http(self) -> None:
+        result = self.run_cli("--live-binance-check")
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("requires --start, --end, and --as-of", result.stderr)
 
 
 if __name__ == "__main__":
